@@ -15,10 +15,13 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+
 builder.Services.AddApplication(builder.Configuration);
+
 // Register repositories
-builder.Services.AddScoped<IPlacemarkRepository, PlacemarkRepository>();
-builder.Services.AddScoped<IValidator<FilterRequestEntityDto>, FilterRequestValidator>();
+var kmlFilePath = builder.Configuration.GetSection("KmlSettings:FilePath").Value;
+builder.Services.AddScoped<IPlacemarkRepository>(provider =>
+    new PlacemarkRepository(kmlFilePath)); builder.Services.AddScoped<IValidator<FilterRequestEntityDto>, FilterRequestValidator>();
 
 
 var app = builder.Build();

@@ -1,81 +1,77 @@
-﻿using AutoMapper;
-using FluentValidation;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using TestV1Vibe.Application.DTOs;
 using TestV1Vibe.Domain.Entities;
 using TestV1Vibe.Domain.Repositories;
 
-namespace TestV1Vibe.Api.Controllers;
+namespace TestV1Vibe.API.Controllers;
 
 [ApiController]
 [Route("api/placemarks")]
 public class PlacemarkController : ControllerBase
 {
-    private readonly IPlacemarkRepository _placemarkRepository;
-    private readonly IMapper _mapper;
-    private readonly IValidator<FilterRequestEntityDto> _filterValidator;
+    private readonly IPlacemarkRepository _repository;
 
-    public PlacemarkController(IPlacemarkRepository placemarkRepository, IMapper mapper, IValidator<FilterRequestEntityDto> filterValidator)
+    public PlacemarkController(IPlacemarkRepository repository)
     {
-        _placemarkRepository = placemarkRepository;
-        _mapper = mapper;
-        _filterValidator = filterValidator;
+        _repository = repository;
     }
 
-    [HttpPost("export")]
-    public async Task<IActionResult> ExportKml([FromBody] FilterRequestEntityDto filters)
-    {
-        var validationResult = _filterValidator.Validate(filters);
-        if (!validationResult.IsValid)
-        {
-            return BadRequest(validationResult.Errors.Select(e => e.ErrorMessage));
-        }
-
-        var placemarks = await _placemarkRepository.BuscaPlacemark();
-        var filteredPlacemarks = ApplyFilters(placemarks, filters);
-
-        var kmlDocument = await _placemarkRepository.ExportarKml(_mapper.Map<IEnumerable<Placemark>>(filteredPlacemarks));
-
-        return File(System.Text.Encoding.UTF8.GetBytes(kmlDocument.ToString()), "application/vnd.google-earth.kml+xml", "filtered.kml");
-    }
-
+    // Endpoint 1: Listar todos os placemarks
     [HttpGet]
-    public async Task<IActionResult> GetPlacemarks([FromQuery] FilterRequestEntityDto filters)
+    public async Task<IActionResult> GetPlacemarks()
     {
-        var validationResult = _filterValidator.Validate(filters);
-        if (!validationResult.IsValid)
-        {
-            return BadRequest(validationResult.Errors.Select(e => e.ErrorMessage));
-        }
+        var placemarks = await _repository.BuscaPlacemark();
 
-        var placemarks = await _placemarkRepository.BuscaPlacemark();
-        var filteredPlacemarks = ApplyFilters(placemarks, filters);
+        if (!placemarks.Any())
+            return NotFound("Nenhum placemark encontrado.");
 
-        return Ok(filteredPlacemarks);
+        return Ok(placemarks);
     }
 
-    [HttpGet("filters")]
-    public async Task<IActionResult> GetAvailableFilters()
+    // Endpoint 2: Exportar placemarks filtrados
+    [HttpPost("export")]
+    public async Task<IActionResult> ExportPlacemarks([FromBody] IEnumerable<PlacemarkDto> placemarks)
     {
-        var placemarks = await _placemarkRepository.BuscaPlacemark();
-        var uniqueFilters = new UniquevaluesDto
+        if (placemarks == null || !placemarks.Any())
+            return BadRequest("A lista de placemarks para exportar está vazia.");
+
+        // Converter DTO para entidade de domínio
+        var domainPlacemarks = placemarks.Select(p => new Placemark
         {
-            Clientes = placemarks.Select(p => p.Cliente).Distinct(),
-            Situacoes = placemarks.Select(p => p.Situacao).Distinct(),
-            Bairros = placemarks.Select(p => p.Bairro).Distinct()
+            Nome = p.Nome,
+            Cliente = p.Cliente,
+            Bairro = p.Bairro,
+            Coordenadas = p.Coordenadas,
+            Descricao = p.Descricao,
+            Data = p.Data,
+            Imagens = p.Imagens
+        });
+
+        var kmlDocument = await _repository.ExportarKml(domainPlacemarks);
+
+        // Retorna o KML como arquivo
+        return File(
+            System.Text.Encoding.UTF8.GetBytes(kmlDocument.ToString()),
+            "application/vnd.google-earth.kml+xml",
+            "FilteredPlacemarks.kml"
+        );
+    }
+
+    // Endpoint 3: Listar valores únicos para filtros
+    [HttpGet("filters")]
+    public async Task<IActionResult> GetFilterValues()
+    {
+        var placemarks = await _repository.BuscaPlacemark();
+
+        if (!placemarks.Any())
+            return NotFound("Nenhum placemark encontrado para extrair filtros.");
+
+        var uniqueFilters = new
+        {
+            Clientes = placemarks.Select(p => p.Cliente).Where(c => !string.IsNullOrEmpty(c)).Distinct(),
+            Bairros = placemarks.Select(p => p.Bairro).Where(b => !string.IsNullOrEmpty(b)).Distinct()
         };
 
         return Ok(uniqueFilters);
-    }
-
-    private IEnumerable<PlacemarkDto> ApplyFilters(IEnumerable<Placemark> placemarks, FilterRequestEntityDto filters)
-    {
-        return placemarks
-            .Where(p => string.IsNullOrEmpty(filters.Cliente) || p.Cliente == filters.Cliente)
-            .Where(p => string.IsNullOrEmpty(filters.Situacao) || p.Situacao == filters.Situacao)
-            .Where(p => string.IsNullOrEmpty(filters.Bairro) || p.Bairro == filters.Bairro)
-            .Where(p => string.IsNullOrEmpty(filters.Referencia) || p.Referencia.Contains(filters.Referencia))
-            .Where(p => string.IsNullOrEmpty(filters.RuaCruzamento) || p.RuaCruzamento.Contains(filters.RuaCruzamento))
-            .Select(p => _mapper.Map<PlacemarkDto>(p));
     }
 }

@@ -1,6 +1,6 @@
 ﻿namespace TestV1Vibe.Application.DTOs;
 
-public class PlacemarkDto
+public class PlacemarkDto : FilterRequestEntityDto
 {
     public string Nome { get; set; } = string.Empty;
     public string Descricao { get; set; } = string.Empty;
