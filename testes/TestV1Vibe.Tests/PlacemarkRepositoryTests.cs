@@ -1,119 +1,77 @@
-﻿using TestV1Vibe.Domain.Entities;
+﻿using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using TestV1Vibe.Domain.Entities;
 using TestV1Vibe.Infrastructure.Repositories;
+using Xunit;
 
-namespace TestV1Vibe.Tests
+namespace TestV1Vibe.Tests.Infrastructure
 {
     public class PlacemarkRepositoryTests
     {
+        // Caminho para o arquivo KML fornecido
         private readonly string _validKmlPath = Path.Combine(
-            Directory.GetCurrentDirectory(),
-            "TestFiles",
-            "DIRECIONADORES1.kml"
-        );
-
+                    Directory.GetCurrentDirectory(),
+                    "TestFiles",
+                    "DIRECIONADORES1.kml"
+                );
         [Fact]
         public async Task BuscaPlacemark_ShouldReturnPlacemarks_WhenKmlIsValid()
         {
+            // Arrange: Repositório com arquivo KML válido
             var repository = new PlacemarkRepository(_validKmlPath);
 
+            // Act: Busca os placemarks no arquivo
             var result = await repository.BuscaPlacemark();
 
             // Assert
-            Assert.NotNull(result);
-            Assert.NotEmpty(result);
-            foreach (var placemark in result)
+            Assert.NotNull(result); // Verifica que o resultado não é nulo
+            Assert.NotEmpty(result); // Garante que há placemarks retornados
+            Assert.All(result, placemark =>
             {
-                if (string.IsNullOrEmpty(placemark.Bairro))
-                {
-                    Console.WriteLine($"Aviso: O bairro do placemark '{placemark.Nome}' está vazio.");
-                }
-                else
-                {
-                    Assert.False(string.IsNullOrEmpty(placemark.Bairro), "O bairro do placemark deve estar preenchido.");
-                }
-
-                if (string.IsNullOrEmpty(placemark.Cliente))
-                {
-                    Console.WriteLine($"Aviso: O cliente do placemark '{placemark.Nome}' está vazio.");
-                }
-                else
-                {
-                    Assert.False(string.IsNullOrEmpty(placemark.Cliente), "O cliente do placemark deve estar preenchido.");
-                }
-
                 Assert.False(string.IsNullOrEmpty(placemark.Nome), "O nome do placemark deve estar preenchido.");
-            }
+                Assert.False(string.IsNullOrEmpty(placemark.Coordenadas), "As coordenadas do placemark devem estar preenchidas.");
+
+                // Aceite casos em que Bairro ou Cliente podem estar ausentes
+                if (!string.IsNullOrEmpty(placemark.Bairro))
+                {
+                    Assert.False(string.IsNullOrEmpty(placemark.Cliente), "Se o Bairro estiver preenchido, Cliente também deve estar.");
+                }
+            });
         }
 
         [Fact]
         public async Task ExportarKml_ShouldReturnValidDocument_WhenPlacemarksAreProvided()
         {
+            // Arrange: Configura os placemarks para exportar
             var repository = new PlacemarkRepository(_validKmlPath);
             var placemarks = new[]
             {
-                new Placemark { Nome = "Placemark Test", Cliente = "Cliente Exemplo", Bairro = "Bairro Exemplo" },
-                new Placemark { Nome = "Another Test", Cliente = "Outro Cliente", Bairro = "Outro Bairro" }
+                new Placemark { Nome = "Ponto 1", Cliente = "GRADE", Bairro = "13 DE JULHO", Coordenadas = "-10.9313079,-37.0472967,0" },
+                new Placemark { Nome = "Ponto 2", Cliente = "Outro Cliente", Bairro = "Outro Bairro", Coordenadas = "-10.000000,-37.000000,0" }
             };
 
+            // Act: Exporta o KML baseado nos placemarks fornecidos
             var result = await repository.ExportarKml(placemarks);
 
             // Assert
-            Assert.NotNull(result);
-            if (!result.Descendants().Any(x => x.Name.LocalName == "Placemark"))
-            {
-                Console.WriteLine("Aviso: O KML exportado não contém placemarks.");
-            }
-            else
-            {
-                Assert.True(result.Descendants().Any(x => x.Name.LocalName == "Placemark"), "O KML exportado deve conter placemarks.");
-            }
+            Assert.NotNull(result); // Garante que o documento não é nulo
+            Assert.True(result.Descendants().Any(x => x.Name.LocalName == "Placemark"), "O KML exportado deve conter placemarks.");
 
             // Verifica se os valores dos placemarks estão no arquivo exportado
-            if (!result.ToString().Contains("Placemark Test"))
-            {
-                Console.WriteLine("Aviso: O KML exportado não contém 'Placemark Test'.");
-            }
-            else
-            {
-                Assert.Contains("Placemark Test", result.ToString());
-            }
-
-            if (!result.ToString().Contains("Cliente Exemplo"))
-            {
-                Console.WriteLine("Aviso: O KML exportado não contém 'Cliente Exemplo'.");
-            }
-            else
-            {
-                Assert.Contains("Cliente Exemplo", result.ToString());
-            }
-
-            if (!result.ToString().Contains("Bairro Exemplo"))
-            {
-                Console.WriteLine("Aviso: O KML exportado não contém 'Bairro Exemplo'.");
-            }
-            else
-            {
-                Assert.Contains("Bairro Exemplo", result.ToString());
-            }
+            Assert.Contains("Ponto 1", result.ToString());
+            Assert.Contains("GRADE", result.ToString());
+            Assert.Contains("13 DE JULHO", result.ToString());
         }
 
         [Fact]
         public async Task ExportarKml_ShouldThrowException_WhenPlacemarkListIsEmpty()
         {
+            // Arrange: Repositório com lista de placemarks vazia
             var repository = new PlacemarkRepository(_validKmlPath);
 
             // Act & Assert
-            try
-            {
-                await repository.ExportarKml(Enumerable.Empty<Placemark>());
-            }
-            catch (ArgumentException ex)
-            {
-                Console.WriteLine($"Aviso: Exceção esperada lançada - {ex.Message}");
-                return;
-            }
-
-            Console.WriteLine("Aviso: Nenhuma exceção foi lançada quando a lista de placemarks estava vazia.");
+            await Assert.ThrowsAsync<ArgumentException>(() => repository.ExportarKml(Enumerable.Empty<Placemark>()));
         }
     }
 }

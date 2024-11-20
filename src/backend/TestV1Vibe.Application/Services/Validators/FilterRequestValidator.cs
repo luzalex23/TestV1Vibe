@@ -1,9 +1,10 @@
 ﻿using FluentValidation;
+using TestV1Vibe.Application.DTOs;
 using TestV1Vibe.Domain.Entities;
 
 namespace TestV1Vibe.Application.Services.Validators;
 
-public class FilterRequestValidator : AbstractValidator<FilterRequestEntity>
+public class FilterRequestValidator : AbstractValidator<FilterRequestEntityDto>
 {
     public FilterRequestValidator()
     {

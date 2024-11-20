@@ -14,91 +14,62 @@ public class PlacemarkRepository : IPlacemarkRepository
 
     public async Task<IEnumerable<Placemark>> BuscaPlacemark()
     {
-        if (!File.Exists(_filePath))
-            throw new FileNotFoundException($"O arquivo KML no caminho {_filePath} não foi encontrado.");
+        XNamespace ns = "http://www.opengis.net/kml/2.2";
+        var document = XDocument.Load(_filePath);
 
-        try
-        {
-            XNamespace nameSpace = "http://www.opengis.net/kml/2.2";
-            var document = XDocument.Load(_filePath);
+        var placemarks = document.Descendants(ns + "Placemark")
+            .Select(p => new Placemark
+            {
+                Nome = (string)p.Element(ns + "name") ?? string.Empty,
+                Descricao = (string)p.Element(ns + "description") ?? string.Empty,
+                Cliente = (string)p.Descendants(ns + "Data")
+                                   .FirstOrDefault(d => (string)d.Attribute("name") == "CLIENTE")
+                                   ?.Element(ns + "value") ?? string.Empty,
+                Bairro = (string)p.Descendants(ns + "Data")
+                                   .FirstOrDefault(d => (string)d.Attribute("name") == "BAIRRO")
+                                   ?.Element(ns + "value") ?? string.Empty,
+                Coordenadas = (string)p.Descendants(ns + "coordinates").FirstOrDefault() ?? string.Empty,
+                Data = (string)p.Descendants(ns + "Data")
+                                .FirstOrDefault(d => (string)d.Attribute("name") == "DATA")
+                                ?.Element(ns + "value") ?? string.Empty,
+            })
+            // Filtra placemarks inválidos
+            .Where(p => !string.IsNullOrEmpty(p.Cliente) && !string.IsNullOrEmpty(p.Bairro))
+            .ToList();
 
-            var kmlPercorrido = document.Descendants(nameSpace + "Placemark")
-                .Select(p => new Placemark
-                {
-                    Nome = (string)p.Element(nameSpace + "name")?.Value,
-                    Descricao = (string)p.Element(nameSpace + "description")?.Value,
-                    Cliente = (string)p.Descendants(nameSpace + "Data").FirstOrDefault(d => (string)d.Attribute("name") == "CLIENTE")?.Element(nameSpace + "value")?.Value,
-                    Situacao = (string)p.Descendants(nameSpace + "Data").FirstOrDefault(d => (string)d.Attribute("name") == "SITUAÇÃO")?.Element(nameSpace + "value")?.Value,
-                    Bairro = (string)p.Descendants(nameSpace + "Data").FirstOrDefault(d => (string)d.Attribute("name") == "BAIRRO")?.Element(nameSpace + "value")?.Value,
-                    Referencia = (string)p.Descendants(nameSpace + "Data").FirstOrDefault(d => (string)d.Attribute("name") == "REFERENCIA")?.Element(nameSpace + "value")?.Value,
-                    RuaCruzamento = (string)p.Descendants(nameSpace + "Data").FirstOrDefault(d => (string)d.Attribute("name") == "RUA/CRUZAMENTO")?.Element(nameSpace + "value")?.Value,
-                    Data = (string)p.Descendants(nameSpace + "Data").FirstOrDefault(d => (string)d.Attribute("name") == "DATA")?.Element(nameSpace + "value")?.Value,
-                    Coordenadas = (string)p.Descendants(nameSpace + "Data").FirstOrDefault(d => (string)d.Attribute("name") == "COORDENADAS")?.Element(nameSpace + "value")?.Value,
-                    Imagens = p.Descendants(nameSpace + "Data").Where(d => (string)d.Attribute("name") == "gx_media_links")
-                                .Select(d => (string)d.Element(nameSpace + "value")?.Value)
-                });
-
-            return kmlPercorrido;
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException($"Erro ao carregar o arquivo KML: {ex.Message}", ex);
-        }
+        return placemarks;
     }
+
+
 
 
     public async Task<XDocument> ExportarKml(IEnumerable<Placemark> placemarks)
     {
-        if (!File.Exists(_filePath))
-            throw new FileNotFoundException($"O arquivo KML no caminho {_filePath} não foi encontrado.");
+        if (placemarks == null || !placemarks.Any())
+            throw new ArgumentException("A lista de placemarks não pode estar vazia.");
 
         XNamespace ns = "http://www.opengis.net/kml/2.2";
-        var document = XDocument.Load(_filePath);
 
-        try
-        {
-            var kmlDoc = new XDocument(
-                new XElement(ns + "kml",
-                    new XElement(ns + "Document",
-                        placemarks.Select(p =>
-                        {
-                            var originalPlacemark = document.Descendants(ns + "Placemark")
-                                .FirstOrDefault(x => x.Descendants(ns + "Data")
-                                    .Any(d => (string)d.Attribute("name") == "CLIENTE" &&
-                                              (string)d.Element(ns + "value")?.Value?.ToUpper() == p.Cliente.ToUpper()));
-
-                            if (originalPlacemark == null)
-                                return null;
-
-                            return new XElement(ns + "Placemark",
-                                new XElement(ns + "name", p.Nome),
-                                new XElement(ns + "description", p.Descricao),
-                                new XElement(ns + "Data",
-                                    new XAttribute("name", "CLIENTE"),
-                                    new XElement(ns + "value", p.Cliente)
-                                ),
-                                new XElement(ns + "Data",
-                                    new XAttribute("name", "BAIRRO"),
-                                    new XElement(ns + "value", p.Bairro)
-                                ),
-                                p.Imagens.Select(img =>
-                                    new XElement(ns + "Data",
-                                        new XAttribute("name", "gx_media_links"),
-                                        new XElement(ns + "value", img)
-                                    ))
-                            );
-                        })
-                        .Where(x => x != null) 
-                    )
+        var kmlDoc = new XDocument(
+            new XElement(ns + "kml",
+                new XElement(ns + "Document",
+                    placemarks.Select(p => new XElement(ns + "Placemark",
+                        new XElement(ns + "name", p.Nome),
+                        new XElement(ns + "ExtendedData",
+                            new XElement(ns + "Data", new XAttribute("name", "CLIENTE"),
+                                new XElement(ns + "value", p.Cliente)),
+                            new XElement(ns + "Data", new XAttribute("name", "BAIRRO"),
+                                new XElement(ns + "value", p.Bairro))
+                        ),
+                        new XElement(ns + "Point",
+                            new XElement(ns + "coordinates", p.Coordenadas)
+                        )
+                    ))
                 )
-            );
+            )
+        );
 
-            return kmlDoc;
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException($"Erro ao exportar o KML: {ex.Message}", ex);
-        }
+        return kmlDoc;
     }
 
 }
